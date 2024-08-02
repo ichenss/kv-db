@@ -81,6 +81,24 @@ func (db *DB) Put(key []byte, value []byte) error {
 	return nil
 }
 
+func (db *DB) Delete(key []byte) error {
+	if len(key) == 0 {
+		return ErrKeyIsEmpty
+	}
+	if pos := db.index.Get(key); pos == nil {
+		return nil
+	}
+	logRecord := &data.LogRecord{Key: key, Type: data.LogRecordDeleted}
+	_, err := db.appendLogRecord(logRecord)
+	if err != nil {
+		return err
+	}
+	if ok := db.index.Delete(key); !ok {
+		return ErrIndexUpdateFailed
+	}
+	return nil
+}
+
 // Get 根据 key 读取数据
 func (db *DB) Get(key []byte) ([]byte, error) {
 	db.mu.Lock()
@@ -259,10 +277,15 @@ func (db *DB) loadIndexFromDataFiles() error {
 				Fid:    fileId,
 				Offset: offset,
 			}
+
+			var ok bool
 			if logRecord.Type == data.LogRecordDeleted {
-				db.index.Delete(logRecord.Key)
+				ok = db.index.Delete(logRecord.Key)
 			} else {
-				db.index.Put(logRecord.Key, logRecordPos)
+				ok = db.index.Put(logRecord.Key, logRecordPos)
+			}
+			if !ok {
+				return ErrIndexUpdateFailed
 			}
 
 			// 递增 offset,下一次从新的位置读取
