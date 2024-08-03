@@ -18,8 +18,8 @@ var (
 // DataFile 数据文件
 type DataFile struct {
 	FileId    uint32        // 文件 id
-	WriteOff  int64         // 文件写到了哪个位置
-	IOManager fio.IOManager // io 读写管理
+	WriteOff  int64         // 记录文件写到了哪个位置,下次 write 用
+	IOManager fio.IOManager // io 读写管理，文件操作接口
 }
 
 // OpenDataFile 打开新的数据文件
@@ -43,11 +43,11 @@ func (df *DataFile) ReadLogRecord(offset int64) (*LogRecord, int64, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-
 	var headerBytes int64 = maxLogRecordHeaderSize
 	if offset+maxLogRecordHeaderSize > fileSize {
 		headerBytes = fileSize - offset
 	}
+
 	headerBuf, err := df.readNBytes(headerBytes, offset)
 	if err != nil {
 		return nil, 0, err
