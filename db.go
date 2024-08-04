@@ -140,6 +140,14 @@ func (db *DB) Get(key []byte) ([]byte, error) {
 	return logRecord.Value, nil
 }
 
+func (db *DB) Close() error {
+	return nil
+}
+
+func (db *DB) Sync() error {
+	return db.activeFile.IOManager.Sync()
+}
+
 // appendLogRecord 追加写数据到活跃文件中
 func (db *DB) appendLogRecord(logRecord *data.LogRecord) (*data.LogRecordPos, error) {
 	db.mu.Lock()
