@@ -101,8 +101,8 @@ func (db *DB) Delete(key []byte) error {
 
 // Get 根据 key 读取数据
 func (db *DB) Get(key []byte) ([]byte, error) {
-	db.mu.Lock()
-	defer db.mu.Unlock()
+	db.mu.RLock()
+	defer db.mu.RUnlock()
 
 	if len(key) == 0 {
 		return nil, ErrKeyIsEmpty
