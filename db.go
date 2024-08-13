@@ -20,6 +20,7 @@ type DB struct {
 	activeFile *data.DataFile            // 当前活跃数据文件，可用于写入
 	olderFiles map[uint32]*data.DataFile // 旧的数据文件，只用于读
 	index      index.Indexer             // 内存索引
+	seqNo      uint64                    // 事务序列号，全局递增
 }
 
 func Open(options Options) (*DB, error) {
@@ -68,7 +69,7 @@ func (db *DB) Put(key []byte, value []byte) error {
 	}
 
 	// 追加写入到当前活跃数据文件中
-	pos, err := db.appendLogRecord(logRecord)
+	pos, err := db.appendLogRecordWithLock(logRecord)
 	if err != nil {
 		return err
 	}
@@ -89,7 +90,7 @@ func (db *DB) Delete(key []byte) error {
 		return nil
 	}
 	logRecord := &data.LogRecord{Key: key, Type: data.LogRecordDeleted}
-	_, err := db.appendLogRecord(logRecord)
+	_, err := db.appendLogRecordWithLock(logRecord)
 	if err != nil {
 		return err
 	}
@@ -204,10 +205,14 @@ func (db *DB) Sync() error {
 	return db.activeFile.Sync()
 }
 
-// appendLogRecord 追加写数据到活跃文件中
-func (db *DB) appendLogRecord(logRecord *data.LogRecord) (*data.LogRecordPos, error) {
+func (db *DB) appendLogRecordWithLock(logRecord *data.LogRecord) (*data.LogRecordPos, error) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
+	return db.appendLogRecord(logRecord)
+}
+
+// 追加写数据到活跃文件中
+func (db *DB) appendLogRecord(logRecord *data.LogRecord) (*data.LogRecordPos, error) {
 	if db.activeFile == nil {
 		if err := db.setActiveDataFile(); err != nil {
 			return nil, err
