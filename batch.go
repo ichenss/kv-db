@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 )
 
+const nonTransactionSeqNo uint64 = 0
+
 var txnFinKey = []byte("txn-fin")
 
 type WriteBatch struct {
@@ -92,7 +94,7 @@ func (wb *WriteBatch) Commit() error {
 	positions := make(map[string]*data.LogRecordPos)
 	for _, item := range wb.pendingWrites {
 		logRecordPos, err := wb.db.appendLogRecord(&data.LogRecord{
-			Key:   wb.logRecordKeyWithSeq(item.Key, seqNo),
+			Key:   logRecordKeyWithSeq(item.Key, seqNo),
 			Value: item.Value,
 			Type:  item.Type,
 		})
@@ -104,7 +106,7 @@ func (wb *WriteBatch) Commit() error {
 
 	// 写一条事务完成的数据
 	finishedRecord := &data.LogRecord{
-		Key:  wb.logRecordKeyWithSeq(txnFinKey, seqNo),
+		Key:  logRecordKeyWithSeq(txnFinKey, seqNo),
 		Type: data.LogRecordTxnFinished,
 	}
 	if _, err := wb.db.appendLogRecord(finishedRecord); err != nil {
@@ -134,7 +136,7 @@ func (wb *WriteBatch) Commit() error {
 }
 
 // key + seq Number 编码
-func (wb *WriteBatch) logRecordKeyWithSeq(key []byte, seqNo uint64) []byte {
+func logRecordKeyWithSeq(key []byte, seqNo uint64) []byte {
 	seq := make([]byte, binary.MaxVarintLen64)
 	n := binary.PutUvarint(seq[:], seqNo)
 
@@ -145,6 +147,9 @@ func (wb *WriteBatch) logRecordKeyWithSeq(key []byte, seqNo uint64) []byte {
 	return encKey
 }
 
+// 解析key，获取实际的key和序列号
 func parseLogRecordKey(key []byte) ([]byte, uint64) {
-	return nil, 0
+	seqNo, n := binary.Uvarint(key)
+	realKey := key[n:]
+	return realKey, seqNo
 }

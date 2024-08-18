@@ -37,6 +37,12 @@ type LogRecordPos struct {
 	Offset int64  // 偏移，表示将数据存储到数据文件中哪个位置
 }
 
+// TransactionRecord 暂存的事务相关的数据
+type TransactionRecord struct {
+	Record *LogRecord
+	Pos    *LogRecordPos
+}
+
 // EncodeLogRecord 对 logRecord 进行编码，返回字节数组及长度
 // crc | type | keyIndex | valueIndex | Key | Value
 func EncodeLogRecord(logRecord *LogRecord) ([]byte, int64) {
