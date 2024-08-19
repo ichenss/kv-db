@@ -21,6 +21,7 @@ type DB struct {
 	olderFiles map[uint32]*data.DataFile // 旧的数据文件，只用于读
 	index      index.Indexer             // 内存索引
 	seqNo      uint64                    // 事务序列号，全局递增
+	isMerging  bool                      // 是否正在merge
 }
 
 func Open(options Options) (*DB, error) {
