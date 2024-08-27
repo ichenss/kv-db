@@ -6,9 +6,13 @@ import (
 	"os"
 	"path"
 	"sort"
+	"strconv"
 )
 
-const mergeDirName = "-merge"
+const (
+	mergeDirName     = "-merge"
+	mergeFinishedKey = "merge.finished"
+)
 
 // Merge 清理无效数据，生成 Hint 文件
 func (db *DB) Merge() error {
@@ -41,6 +45,9 @@ func (db *DB) Merge() error {
 		db.mu.Unlock()
 		return err
 	}
+
+	// 记录最近没有参与 merge 的文件id
+	nonMergeFileId := db.activeFile.FileId
 
 	// 取出所有需要merge的数据文件
 	var mergeFiles []*data.DataFile
@@ -76,6 +83,12 @@ func (db *DB) Merge() error {
 		return err
 	}
 
+	// 打开 Hint 文件存储索引
+	hintFile, err := data.OpenHintFile(mergePath)
+	if err != nil {
+		return err
+	}
+
 	// 遍历处理每个数据文件
 	for _, dataFile := range mergeFiles {
 		var offset int64 = 0
@@ -99,9 +112,38 @@ func (db *DB) Merge() error {
 					return err
 				}
 				// 将当前位置索引写进 Hint 文件中
-				// TODO: 1931
+				if err := hintFile.WriteHintRecord(realKey, pos); err != nil {
+					return err
+				}
 			}
+			// 增加 offset
+			offset += size
 		}
+	}
+	// sync 保证持久化
+	if err := hintFile.Sync(); err != nil {
+		return err
+	}
+	if err := mergeDB.Sync(); err != nil {
+		return err
+	}
+
+	// 写表示 merge 完成的文件
+	mergeFinishedFile, err := data.OpenMergeFinishedFile(mergePath)
+	if err != nil {
+		return err
+	}
+	mergeFileRecord := &data.LogRecord{
+		Key:   []byte(mergeFinishedKey),
+		Value: []byte(strconv.Itoa(int(nonMergeFileId))),
+	}
+
+	encRecord, _ := data.EncodeLogRecord(mergeFileRecord)
+	if err := mergeFinishedFile.Write(encRecord); err != nil {
+		return err
+	}
+	if err := mergeFinishedFile.Sync(); err != nil {
+		return err
 	}
 	return nil
 }
@@ -110,4 +152,107 @@ func (db *DB) getMergePath() string {
 	dir := path.Dir(path.Clean(db.options.DirPath))
 	base := path.Base(db.options.DirPath)
 	return path.Join(dir, base+mergeDirName)
+}
+
+func (db *DB) loadMergeFiles() error {
+	mergePath := db.getMergePath()
+	if _, err := os.Stat(mergePath); os.IsNotExist(err) {
+		return nil
+	}
+	defer func() {
+		_ = os.RemoveAll(mergePath)
+	}()
+
+	dirEntries, err := os.ReadDir(mergePath)
+	if err != nil {
+		return nil
+	}
+
+	// 查找表示 merge 完成的文件，判断 merge 是否处理完成
+	var mergeFinished bool
+	var mergeFileNames []string
+	for _, entry := range dirEntries {
+		if entry.Name() == data.MergeFinishedFileName {
+			mergeFinished = true
+		}
+		mergeFileNames = append(mergeFileNames, entry.Name())
+	}
+
+	// 没有 merge 完成直接返回
+	if !mergeFinished {
+		return nil
+	}
+
+	nonMergeFileId, err := db.getNonMergeFileId(mergePath)
+	if err != nil {
+		return err
+	}
+
+	// 删除旧数据文件
+	var fileId uint32 = 0
+	for ; fileId < nonMergeFileId; fileId++ {
+		fileName := data.GetDataFileName(mergePath, fileId)
+		if _, err := os.Stat(fileName); err == nil {
+			if err := os.Remove(fileName); err != nil {
+				return err
+			}
+		}
+	}
+
+	// 将新的数据文件移动到目录中
+	for _, fileName := range mergeFileNames {
+		// /temp/bitcask-merge 00.data 11.data
+		// /temp/bitcask 00.data 11.data
+		srcPath := path.Join(mergePath, fileName)
+		destPath := path.Join(db.options.DirPath, fileName)
+		if err := os.Rename(srcPath, destPath); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (db *DB) getNonMergeFileId(mergePath string) (uint32, error) {
+	mergeFinishedFile, err := data.OpenMergeFinishedFile(mergePath)
+	if err != nil {
+		return 0, err
+	}
+	record, _, err := mergeFinishedFile.ReadLogRecord(0)
+	if err != nil {
+		return 0, nil
+	}
+	nonMergeFileId, err := strconv.Atoi(string(record.Value))
+	return uint32(nonMergeFileId), nil
+}
+
+func (db *DB) loadIndexFromHintFile() error {
+	// 查看所有 hint 文件是否存在
+	hintFileName := path.Join(db.options.DirPath, data.HintFileName)
+	if _, err := os.Stat(hintFileName); os.IsNotExist(err) {
+		return nil
+	}
+
+	// 打开 hint 索引文件
+	hintFile, err := data.OpenHintFile(db.options.DirPath)
+	if err != nil {
+		return err
+	}
+
+	// 读取文件中的索引
+	var offset int64 = 0
+	for {
+		logRecord, size, err := hintFile.ReadLogRecord(offset)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+
+		// 解码拿到实际位置索引信息
+		pos := data.DecodeLogRecordPos(logRecord.Value)
+		db.index.Put(logRecord.Key, pos)
+		offset += size
+	}
+	return nil
 }
