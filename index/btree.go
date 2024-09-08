@@ -59,6 +59,7 @@ func (bt *BTree) Iterator(reverse bool) Iterator {
 	return newBtreeIterator(bt.tree, reverse)
 }
 
+// B树索引迭代器
 type btreeIterator struct {
 	currIndex int     // 当前遍历的下标位置
 	reverse   bool    // 是否反向遍历
