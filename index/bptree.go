@@ -16,8 +16,10 @@ type BPlusTree struct {
 }
 
 // NewBPlusTree 初始化 B+ 树索引
-func NewBPlusTree(dirPath string) *BPlusTree {
-	bptree, err := bbolt.Open(filepath.Join(dirPath, bptreeIndexFileName), 0644, nil)
+func NewBPlusTree(dirPath string, syncWrites bool) *BPlusTree {
+	opts := bbolt.DefaultOptions
+	opts.NoSync = !syncWrites
+	bptree, err := bbolt.Open(filepath.Join(dirPath, bptreeIndexFileName), 0644, opts)
 	if err != nil {
 		panic("failed to open bptree")
 	}
@@ -90,7 +92,11 @@ func (bpt *BPlusTree) Size() int {
 
 // Iterator 索引迭代器
 func (bpt *BPlusTree) Iterator(reverse bool) Iterator {
-	return nil
+	return newBptreeIterator(bpt.tree, reverse)
+}
+
+func (bpt *BPlusTree) Close() error {
+	return bpt.tree.Close()
 }
 
 type bptreeIterator struct {
@@ -106,11 +112,14 @@ func newBptreeIterator(tree *bbolt.DB, reverse bool) *bptreeIterator {
 	if err != nil {
 		panic("failed to begin a transaction")
 	}
-	return &bptreeIterator{
+	bpi := &bptreeIterator{
 		tx:      tx,
 		cursor:  tx.Bucket(indexBucketName).Cursor(),
 		reverse: reverse,
 	}
+	// 初始化 Rewind 一下，防止 Valid 直接判断出无效
+	bpi.Rewind()
+	return bpi
 }
 
 // Rewind 重新回到迭代器起点
@@ -153,5 +162,5 @@ func (bpi *bptreeIterator) Value() *data.LogRecordPos {
 
 // Close 关闭迭代器
 func (bpi *bptreeIterator) Close() {
-	_ = bpi.tx.Commit()
+	_ = bpi.tx.Rollback()
 }

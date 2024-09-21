@@ -31,13 +31,15 @@ const (
 	Btree IndexerType = iota + 1
 	// ART 自适应基数树索引
 	ART
+	// BPlusTree B+ 树索引，将索引存储在磁盘上
+	BPlusTree
 )
 
 var DefaultOptions = Options{
 	DirPath:      os.TempDir(),
 	DataFileSize: 256 * 1024 * 1024,
 	SyncWrites:   false,
-	IndexType:    Btree,
+	IndexType:    BPlusTree,
 }
 
 var DefaultIteratorOptions = IteratorOptions{
