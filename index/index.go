@@ -33,7 +33,7 @@ const (
 	ART
 )
 
-func NewIndexer(typ IndexType) Indexer {
+func NewIndexer(typ IndexType, dirPath string) Indexer {
 	switch typ {
 	case Btree:
 		return NewBTree()
