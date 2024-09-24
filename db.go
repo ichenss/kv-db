@@ -522,5 +522,5 @@ func (db *DB) loadSeqNo() error {
 	}
 	db.seqNo = seqNo
 	db.seqNoFileExists = true
-	return nil
+	return os.Remove(fileName)
 }
