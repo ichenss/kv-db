@@ -2,6 +2,8 @@ package kv_project
 
 import (
 	"errors"
+	"fmt"
+	"github.com/gofrs/flock"
 	"io"
 	"kv_project/data"
 	"kv_project/index"
@@ -14,7 +16,10 @@ import (
 	"sync"
 )
 
-const seqNoKey = "seq.no"
+const (
+	seqNoKey     = "seq.no"
+	fileLockName = "flock"
+)
 
 // DB 存储引擎实例
 type DB struct {
@@ -28,6 +33,8 @@ type DB struct {
 	isMerging       bool                      // 是否正在merge
 	seqNoFileExists bool                      // 存储事务序列号的文件是否存在
 	isInitial       bool                      // 是否是第一次初始化此数据目录
+	fileLock        *flock.Flock              // 文件锁保证多进程之间互斥
+	bytesWrite      uint                      // 累计写了多少字节
 }
 
 func Open(options Options) (*DB, error) {
@@ -44,6 +51,17 @@ func Open(options Options) (*DB, error) {
 			return nil, err
 		}
 	}
+
+	// 判断当前数据目录是否正在使用
+	fileLock := flock.New(filepath.Join(options.DirPath, fileLockName))
+	hold, err := fileLock.TryLock()
+	if err != nil {
+		return nil, err
+	}
+	if !hold {
+		return nil, ErrDatabaseIsUsing
+	}
+
 	entries, err := os.ReadDir(options.DirPath)
 	if err != nil {
 		return nil, err
@@ -59,6 +77,7 @@ func Open(options Options) (*DB, error) {
 		olderFiles: make(map[uint32]*data.DataFile),
 		index:      index.NewIndexer(options.IndexType, options.DirPath, options.SyncWrites),
 		isInitial:  isInitial,
+		fileLock:   fileLock,
 	}
 
 	// 加载 merge 数据目录
@@ -227,6 +246,12 @@ func (db *DB) getValueByPosition(logRecordPos *data.LogRecordPos) ([]byte, error
 
 // Close 关闭数据库
 func (db *DB) Close() error {
+	// 关闭数据库，释放文件锁
+	defer func() {
+		if err := db.fileLock.Unlock(); err != nil {
+			panic(fmt.Sprintf("failed to unlock the directory, %v", err))
+		}
+	}()
 	if db.activeFile == nil {
 		return nil
 	}
@@ -317,9 +342,19 @@ func (db *DB) appendLogRecord(logRecord *data.LogRecord) (*data.LogRecordPos, er
 	}
 
 	// 根据用户配置决定是否持久化
-	if db.options.SyncWrites {
+	db.bytesWrite += uint(size)
+	var needSync = db.options.SyncWrites
+	if !needSync && db.options.BytesPerSync > 0 && db.bytesWrite >= db.options.BytesPerSync {
+		needSync = true
+	}
+
+	if needSync {
 		if err := db.activeFile.Sync(); err != nil {
 			return nil, err
+		}
+		// 清空累计值
+		if db.bytesWrite > 0 {
+			db.bytesWrite = 0
 		}
 	}
 

@@ -28,6 +28,7 @@ func TestOpen(t *testing.T) {
 	defer destroyDB(db)
 	assert.Nil(t, err)
 	assert.NotNil(t, db)
+	db.Close()
 }
 
 func TestDB_Put(t *testing.T) {
@@ -315,7 +316,7 @@ func TestDB_Sync(t *testing.T) {
 	dir, _ := os.MkdirTemp("D:\\golang_pro\\kv_project\\tmp", "bitcask-go-sync")
 	opts.DirPath = dir
 	db, err := Open(opts)
-	defer destroyDB(db)
+	// defer destroyDB(db)
 	assert.Nil(t, err)
 	assert.NotNil(t, db)
 
@@ -324,4 +325,20 @@ func TestDB_Sync(t *testing.T) {
 
 	err = db.Sync()
 	assert.Nil(t, err)
+	db.Close()
+}
+
+func TestDB_FileLock(t *testing.T) {
+	opts := DefaultOptions
+	dir, _ := os.MkdirTemp("D:\\golang_pro\\kv_project\\tmp", "bitcask-go-filelock")
+	opts.DirPath = dir
+	db, err := Open(opts)
+	// defer destroyDB(db)
+	assert.Nil(t, err)
+	assert.NotNil(t, db)
+
+	db2, err := Open(opts)
+	t.Log(db2)
+	t.Log(err)
+	db.Close()
 }

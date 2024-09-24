@@ -7,6 +7,7 @@ type Options struct {
 	DataFileSize int64       // 数据文件的大小
 	SyncWrites   bool        // 每次写数据是否持久化
 	IndexType    IndexerType // 索引类型
+	BytesPerSync uint        // 累计写入多少字节后持久化
 }
 
 type IteratorOptions struct {
@@ -39,7 +40,8 @@ var DefaultOptions = Options{
 	DirPath:      os.TempDir(),
 	DataFileSize: 256 * 1024 * 1024,
 	SyncWrites:   false,
-	IndexType:    BPlusTree,
+	IndexType:    Btree,
+	BytesPerSync: 0,
 }
 
 var DefaultIteratorOptions = IteratorOptions{
