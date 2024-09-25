@@ -5,6 +5,7 @@ import (
 	"kv_project/utils"
 	"os"
 	"testing"
+	"time"
 )
 
 // 测试完成之后销毁 DB 数据目录
@@ -341,4 +342,27 @@ func TestDB_FileLock(t *testing.T) {
 	t.Log(db2)
 	t.Log(err)
 	db.Close()
+}
+
+func TestDB_Open2(t *testing.T) {
+	opts := DefaultOptions
+	opts.DirPath = "D:\\golang_pro\\kv_project\\tmp"
+	opts.MMapAtStartUp = false
+
+	// db, err := Open(opts)
+	// for i := 1; i <= 20000000; i++ {
+	// 	err = db.Put(utils.GetTestKey(i), utils.RandomValue(24))
+	// }
+
+	// assert.Nil(t, err)
+	// val1, err := db.Get(utils.GetTestKey(1))
+	// assert.Nil(t, err)
+	// assert.NotNil(t, val1)
+
+	now := time.Now()
+	db, err := Open(opts)
+	t.Log("open time: ", time.Since(now))
+
+	assert.Nil(t, err)
+	assert.NotNil(t, db)
 }

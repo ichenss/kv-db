@@ -6,6 +6,7 @@ import (
 	"github.com/gofrs/flock"
 	"io"
 	"kv_project/data"
+	"kv_project/fio"
 	"kv_project/index"
 	"os"
 	"path"
@@ -100,6 +101,13 @@ func Open(options Options) (*DB, error) {
 		// 从数据文件中加载索引
 		if err := db.loadIndexFromDataFiles(); err != nil {
 			return nil, err
+		}
+
+		// 重置 IO 类型为标准文件 IO
+		if db.options.MMapAtStartUp {
+			if err := db.resetIOType(); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -372,7 +380,7 @@ func (db *DB) setActiveDataFile() error {
 	}
 
 	// 打开新的数据文件
-	dataFile, err := data.OpenDataFile(db.options.DirPath, initialFileId)
+	dataFile, err := data.OpenDataFile(db.options.DirPath, initialFileId, fio.StandardFIO)
 	if err != nil {
 		return err
 	}
@@ -408,7 +416,11 @@ func (db *DB) loadDataFiles() error {
 
 	// 遍历每个文件 id，打开对应的数据文件
 	for i, fid := range fileIds {
-		dataFile, err := data.OpenDataFile(db.options.DirPath, uint32(fid))
+		ioType := fio.StandardFIO
+		if db.options.MMapAtStartUp {
+			ioType = fio.MemoryMap
+		}
+		dataFile, err := data.OpenDataFile(db.options.DirPath, uint32(fid), ioType)
 		if err != nil {
 			return err
 		}
@@ -558,4 +570,20 @@ func (db *DB) loadSeqNo() error {
 	db.seqNo = seqNo
 	db.seqNoFileExists = true
 	return os.Remove(fileName)
+}
+
+// 将数据文件的 IO 类型设置为标准文件 IO
+func (db *DB) resetIOType() error {
+	if db.activeFile == nil {
+		return nil
+	}
+	if err := db.activeFile.SetIOManager(db.options.DirPath, fio.StandardFIO); err != nil {
+		return err
+	}
+	for _, dataFile := range db.olderFiles {
+		if err := dataFile.SetIOManager(db.options.DirPath, fio.StandardFIO); err != nil {
+			return err
+		}
+	}
+	return nil
 }
