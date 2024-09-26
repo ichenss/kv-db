@@ -3,12 +3,13 @@ package kv_project
 import "os"
 
 type Options struct {
-	DirPath       string      // 数据库数据目录
-	DataFileSize  int64       // 数据文件的大小
-	SyncWrites    bool        // 每次写数据是否持久化
-	IndexType     IndexerType // 索引类型
-	BytesPerSync  uint        // 累计写入多少字节后持久化
-	MMapAtStartUp bool        // 启动时是否使用 MMap 加载数据
+	DirPath            string      // 数据库数据目录
+	DataFileSize       int64       // 数据文件的大小
+	SyncWrites         bool        // 每次写数据是否持久化
+	IndexType          IndexerType // 索引类型
+	BytesPerSync       uint        // 累计写入多少字节后持久化
+	MMapAtStartUp      bool        // 启动时是否使用 MMap 加载数据
+	DataFileMergeRatio float32     // 数据文件合并的阈值
 }
 
 type IteratorOptions struct {
@@ -38,12 +39,13 @@ const (
 )
 
 var DefaultOptions = Options{
-	DirPath:       os.TempDir(),
-	DataFileSize:  256 * 1024 * 1024,
-	SyncWrites:    false,
-	IndexType:     Btree,
-	BytesPerSync:  0,
-	MMapAtStartUp: true,
+	DirPath:            os.TempDir(),
+	DataFileSize:       256 * 1024 * 1024,
+	SyncWrites:         false,
+	IndexType:          Btree,
+	BytesPerSync:       0,
+	MMapAtStartUp:      true,
+	DataFileMergeRatio: 0.5,
 }
 
 var DefaultIteratorOptions = IteratorOptions{

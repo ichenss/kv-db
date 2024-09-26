@@ -3,6 +3,7 @@ package kv_project
 import (
 	"io"
 	"kv_project/data"
+	"kv_project/utils"
 	"os"
 	"path"
 	"sort"
@@ -21,11 +22,35 @@ func (db *DB) Merge() error {
 		return nil
 	}
 
+	// 如果 merge 正在进行当中，则直接返回
 	db.mu.Lock()
 	if db.isMerging {
 		db.mu.Unlock()
 		return ErrMergeIsProgress
 	}
+
+	// 查看可以 merge 的数据量是否达到阈值
+	totalSize, err := utils.DirSize(db.options.DirPath)
+	if err != nil {
+		db.mu.Unlock()
+		return err
+	}
+	if float32(db.reclaimSize)/float32(totalSize) < db.options.DataFileMergeRatio {
+		db.mu.Unlock()
+		return ErrMergeRatioUnreached
+	}
+
+	// 查看剩余的空间容量是否可以容纳 merge 之后的数据量
+	availableDiskSize, err := utils.AvailableDiskSize()
+	if err != nil {
+		db.mu.Unlock()
+		return err
+	}
+	if uint64(totalSize-db.reclaimSize) >= availableDiskSize {
+		db.mu.Unlock()
+		return ErrNoEnoughSpaceForMerge
+	}
+
 	db.isMerging = true
 	defer func() {
 		db.isMerging = false
@@ -176,6 +201,9 @@ func (db *DB) loadMergeFiles() error {
 			mergeFinished = true
 		}
 		if entry.Name() == data.SeqNoFileName {
+			continue
+		}
+		if entry.Name() == fileLockName {
 			continue
 		}
 		mergeFileNames = append(mergeFileNames, entry.Name())
